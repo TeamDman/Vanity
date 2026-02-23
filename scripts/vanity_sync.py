@@ -13,6 +13,7 @@ from typing import Iterable
 
 
 MARKER_PREFIX = "Vanity-Source-Commit: "
+EXPECTED_VANITY_REMOTE = "https://github.com/TeamDman/Vanity"
 
 
 @dataclass(frozen=True)
@@ -22,6 +23,10 @@ class SourceCommit:
     author_email: str
     author_date_iso: str
     subject: str
+
+
+def shell_quote(value: str) -> str:
+    return "'" + value.replace("'", "'\"'\"'") + "'"
 
 
 def run_git(args: list[str], cwd: Path, env: dict[str, str] | None = None) -> str:
@@ -45,6 +50,41 @@ def run_git(args: list[str], cwd: Path, env: dict[str, str] | None = None) -> st
 
 def ensure_git_repo(path: Path) -> None:
     run_git(["rev-parse", "--is-inside-work-tree"], cwd=path)
+
+
+def normalize_remote_url(url: str) -> str:
+    normalized = url.strip()
+    if normalized.startswith("git@github.com:"):
+        normalized = "https://github.com/" + normalized.removeprefix("git@github.com:")
+    if normalized.endswith(".git"):
+        normalized = normalized[:-4]
+    return normalized.rstrip("/").lower()
+
+
+def get_origin_url(repo: Path) -> str | None:
+    try:
+        return run_git(["remote", "get-url", "origin"], cwd=repo).strip()
+    except RuntimeError:
+        return None
+
+
+def assert_vanity_target_repo(vanity_repo: Path, allow_non_vanity_target: bool) -> None:
+    if allow_non_vanity_target:
+        return
+
+    origin_url = get_origin_url(vanity_repo)
+    if not origin_url:
+        raise RuntimeError(
+            "Mutation blocked: missing origin remote on vanity target repo. "
+            "Use --allow-non-vanity-target to bypass intentionally."
+        )
+
+    if normalize_remote_url(origin_url) != normalize_remote_url(EXPECTED_VANITY_REMOTE):
+        raise RuntimeError(
+            "Mutation blocked: target repo origin does not match TeamDman/Vanity. "
+            f"Found origin={origin_url!r}, expected={EXPECTED_VANITY_REMOTE!r}. "
+            "Use --allow-non-vanity-target to bypass intentionally."
+        )
 
 
 def existing_mirrored_shas(vanity_repo: Path) -> set[str]:
@@ -131,18 +171,141 @@ def fetch_source_repo_into_temp(source_url: str) -> tuple[tempfile.TemporaryDire
     return temp_dir, repo_dir
 
 
-def build_commit_message(source_repo_hint: str, source_commit: SourceCommit) -> str:
-    return "\n".join(
+def derive_github_web_base(source_repo_hint: str) -> str | None:
+    hint = source_repo_hint.strip()
+    if not hint:
+        return None
+
+    if hint.startswith("git@github.com:"):
+        repo_path = hint.removeprefix("git@github.com:")
+        if repo_path.endswith(".git"):
+            repo_path = repo_path[:-4]
+        return f"https://github.com/{repo_path}"
+
+    if hint.startswith("https://github.com/") or hint.startswith("http://github.com/"):
+        base = hint[:-4] if hint.endswith(".git") else hint
+        return base.rstrip("/")
+
+    return None
+
+
+def source_commit_url(source_repo_hint: str, source_sha: str, source_web_base_url: str | None) -> str | None:
+    base = source_web_base_url or derive_github_web_base(source_repo_hint)
+    if not base:
+        return None
+    return f"{base.rstrip('/')}/commit/{source_sha}"
+
+
+def build_commit_message(
+    source_repo_hint: str,
+    source_commit: SourceCommit,
+    source_web_base_url: str | None,
+) -> str:
+    lines = [
+        f"Vanity mirror: {source_commit.sha[:12]}",
+        "",
+        f"Source-Repo: {source_repo_hint}",
+        f"{MARKER_PREFIX}{source_commit.sha}",
+    ]
+
+    commit_url = source_commit_url(source_repo_hint, source_commit.sha, source_web_base_url)
+    if commit_url:
+        lines.append(f"Source-Commit-URL: {commit_url}")
+
+    lines.extend(
         [
-            f"Vanity mirror: {source_commit.sha[:12]}",
-            "",
-            f"Source-Repo: {source_repo_hint}",
-            f"{MARKER_PREFIX}{source_commit.sha}",
             f"Source-Author: {source_commit.author_name} <{source_commit.author_email}>",
             f"Source-Date: {source_commit.author_date_iso}",
             f"Source-Subject: {source_commit.subject}",
         ]
     )
+    return "\n".join(lines)
+
+
+def parse_prefixed_value(message: str, prefix: str) -> str | None:
+    for line in message.splitlines():
+        if line.startswith(prefix):
+            return line[len(prefix) :].strip()
+    return None
+
+
+def parse_author_line(author_line: str) -> tuple[str, str] | None:
+    match = re.fullmatch(r"(.+)\s+<([^<>]+)>", author_line.strip())
+    if not match:
+        return None
+    return match.group(1), match.group(2)
+
+
+def recompute_message_from_existing(message: str, source_web_base_url: str | None) -> str:
+    source_sha = parse_prefixed_value(message, MARKER_PREFIX)
+    if not source_sha:
+        return message
+
+    source_repo_hint = parse_prefixed_value(message, "Source-Repo: ") or ""
+    source_author_line = parse_prefixed_value(message, "Source-Author: ")
+    source_date = parse_prefixed_value(message, "Source-Date: ")
+    source_subject = parse_prefixed_value(message, "Source-Subject: ")
+
+    if not source_author_line or not source_date or source_subject is None:
+        return message
+
+    parsed_author = parse_author_line(source_author_line)
+    if not parsed_author:
+        return message
+
+    author_name, author_email = parsed_author
+    source_commit = SourceCommit(
+        sha=source_sha.lower(),
+        author_name=author_name,
+        author_email=author_email,
+        author_date_iso=source_date,
+        subject=source_subject,
+    )
+    return build_commit_message(
+        source_repo_hint=source_repo_hint,
+        source_commit=source_commit,
+        source_web_base_url=source_web_base_url,
+    )
+
+
+def message_filter_mode(source_web_base_url: str | None) -> int:
+    original = sys.stdin.read()
+    rewritten = recompute_message_from_existing(original, source_web_base_url)
+    sys.stdout.write(rewritten)
+    return 0
+
+
+def rewrite_history_messages(
+    vanity_repo: Path,
+    source_web_base_url: str | None,
+    rewrite_range: str,
+    allow_non_vanity_target: bool,
+) -> int:
+    ensure_git_repo(vanity_repo)
+    assert_vanity_target_repo(vanity_repo, allow_non_vanity_target)
+    status = run_git(["status", "--porcelain"], cwd=vanity_repo)
+    if status.strip():
+        raise RuntimeError("Working tree must be clean before history rewrite.")
+
+    script_path = str(Path(__file__).resolve())
+    message_filter_cmd = (
+        f"{shell_quote(sys.executable)} {shell_quote(script_path)} --message-filter"
+    )
+    if source_web_base_url:
+        message_filter_cmd += f" --source-web-base-url {shell_quote(source_web_base_url)}"
+
+    run_git(
+        [
+            "filter-branch",
+            "--force",
+            "--msg-filter",
+            message_filter_cmd,
+            "--",
+            rewrite_range,
+        ],
+        cwd=vanity_repo,
+    )
+    return 0
 
 
 def create_empty_commit(
@@ -177,10 +340,14 @@ def sync_vanity_commits(
     source_author_email: str | None,
     vanity_author_name: str | None,
     vanity_author_email: str | None,
+    source_web_base_url: str | None,
+    allow_non_vanity_target: bool,
     dry_run: bool,
     limit: int | None,
 ) -> tuple[int, int, int]:
     ensure_git_repo(vanity_repo)
+    if not dry_run:
+        assert_vanity_target_repo(vanity_repo, allow_non_vanity_target)
 
     temp_repo_handle: tempfile.TemporaryDirectory[str] | None = None
     source_repo_hint = ""
@@ -202,7 +369,11 @@ def sync_vanity_commits(
             pending = pending[:limit]
 
         for commit in pending:
-            message = build_commit_message(source_repo_hint, commit)
+            message = build_commit_message(
+                source_repo_hint=source_repo_hint,
+                source_commit=commit,
+                source_web_base_url=source_web_base_url,
+            )
             create_empty_commit(
                 vanity_repo=vanity_repo,
                 message=message,
@@ -225,7 +396,35 @@ def parse_args(argv: Iterable[str]) -> argparse.Namespace:
         )
     )
     parser.add_argument("--vanity-repo-dir", default=".", help="Path to this vanity repository.")
-    source_group = parser.add_mutually_exclusive_group(required=True)
+    parser.add_argument(
+        "--source-web-base-url",
+        help="Optional source repository web base URL used to build Source-Commit-URL.",
+    )
+    parser.add_argument(
+        "--rewrite-history",
+        action="store_true",
+        help="Rewrite commit messages in history for mirrored commits (uses git filter-branch).",
+    )
+    parser.add_argument(
+        "--rewrite-range",
+        default="HEAD",
+        help="Revision range passed to git filter-branch when --rewrite-history is used.",
+    )
+    parser.add_argument(
+        "--message-filter",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--allow-non-vanity-target",
+        action="store_true",
+        help=(
+            "Bypass safety guard that blocks mutation when target repo origin is not "
+            "https://github.com/TeamDman/Vanity"
+        ),
+    )
+
+    source_group = parser.add_mutually_exclusive_group(required=False)
     source_group.add_argument(
         "--source-repo-dir",
         help="Path to local source repository (use this OR --source-repo-url).",
@@ -245,7 +444,23 @@ def parse_args(argv: Iterable[str]) -> argparse.Namespace:
 
 def main(argv: Iterable[str]) -> int:
     args = parse_args(argv)
+
+    if args.message_filter:
+        return message_filter_mode(args.source_web_base_url)
+
     vanity_repo = Path(args.vanity_repo_dir).resolve()
+
+    if args.rewrite_history:
+        return rewrite_history_messages(
+            vanity_repo=vanity_repo,
+            source_web_base_url=args.source_web_base_url,
+            rewrite_range=args.rewrite_range,
+            allow_non_vanity_target=args.allow_non_vanity_target,
+        )
+
+    if not args.source_repo_dir and not args.source_repo_url:
+        raise ValueError("Provide either --source-repo-dir or --source-repo-url.")
+
     source_repo_dir = Path(args.source_repo_dir).resolve() if args.source_repo_dir else None
 
     total_authored, total_existing, total_created = sync_vanity_commits(
@@ -256,6 +471,8 @@ def main(argv: Iterable[str]) -> int:
         source_author_email=args.source_author_email,
         vanity_author_name=args.vanity_author_name,
         vanity_author_email=args.vanity_author_email,
+        source_web_base_url=args.source_web_base_url,
+        allow_non_vanity_target=args.allow_non_vanity_target,
         dry_run=args.dry_run,
         limit=args.limit,
     )

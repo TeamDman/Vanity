@@ -28,6 +28,7 @@ jobs:
       - name: Sync empty commits
         env:
           SOURCE_REPO_URL: https://github.com/TeamDman/SuperFactoryManager.git
+          SOURCE_WEB_BASE_URL: https://github.com/TeamDman/SuperFactoryManager
           SOURCE_AUTHOR_NAME: TeamDman
           SOURCE_AUTHOR_EMAIL: TeamDman9201@gmail.com
           VANITY_AUTHOR_NAME: TeamDman
@@ -35,6 +36,7 @@ jobs:
         run: |
           uv run python scripts/vanity_sync.py \
             --source-repo-url "$SOURCE_REPO_URL" \
+            --source-web-base-url "$SOURCE_WEB_BASE_URL" \
             --source-author-name "$SOURCE_AUTHOR_NAME" \
             --source-author-email "$SOURCE_AUTHOR_EMAIL" \
             --vanity-author-name "$VANITY_AUTHOR_NAME" \
