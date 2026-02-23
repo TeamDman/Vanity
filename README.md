@@ -38,6 +38,7 @@ Dry-run preview:
 ```
 
 `run.ps1` uses `uv run` under the hood.
+It also installs `tqdm` on demand via `uv --with tqdm` so long-running operations show progress bars.
 
 Generated mirror commits include `Source-Commit-URL` when a GitHub web base is known.
 
@@ -78,3 +79,4 @@ Notes:
 - Working tree must be clean before rewrite.
 - This rewrites commit hashes for the selected range.
 - Rewrite is also protected by the same Vanity-origin safety guard.
+- Rewrite now shows a commit progress bar (via `tqdm`) so you can run in foreground safely.

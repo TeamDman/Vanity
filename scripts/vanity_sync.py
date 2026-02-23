@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
+from tqdm import tqdm
+
 
 MARKER_PREFIX = "Vanity-Source-Commit: "
 EXPECTED_VANITY_REMOTE = "https://github.com/TeamDman/Vanity"
@@ -294,17 +296,48 @@ def rewrite_history_messages(
     if source_web_base_url:
         message_filter_cmd += f" --source-web-base-url {shell_quote(source_web_base_url)}"
 
-    run_git(
-        [
-            "filter-branch",
-            "--force",
-            "--msg-filter",
-            message_filter_cmd,
-            "--",
-            rewrite_range,
-        ],
-        cwd=vanity_repo,
+    command = [
+        "git",
+        "filter-branch",
+        "--force",
+        "--msg-filter",
+        message_filter_cmd,
+        "--",
+        rewrite_range,
+    ]
+
+    process = subprocess.Popen(
+        command,
+        cwd=str(vanity_repo),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
     )
+
+    progress: tqdm | None = None
+    rewrite_pattern = re.compile(r"Rewrite\s+[0-9a-f]{40}\s+\((\d+)/(\d+)\)", re.IGNORECASE)
+
+    assert process.stdout is not None
+    for line in process.stdout:
+        match = rewrite_pattern.search(line)
+        if match:
+            current = int(match.group(1))
+            total = int(match.group(2))
+            if progress is None:
+                progress = tqdm(total=total, desc="Rewriting vanity history", unit="commit")
+            if progress.total != total:
+                progress.total = total
+            if current > progress.n:
+                progress.update(current - progress.n)
+            continue
+        print(line, end="")
+
+    exit_code = process.wait()
+    if progress is not None:
+        progress.close()
+    if exit_code != 0:
+        raise RuntimeError(f"git filter-branch failed with exit code {exit_code}")
     return 0
 
 
@@ -368,7 +401,8 @@ def sync_vanity_commits(
         if limit is not None:
             pending = pending[:limit]
 
-        for commit in pending:
+        pending_iterable = tqdm(pending, desc="Creating vanity commits", unit="commit")
+        for commit in pending_iterable:
             message = build_commit_message(
                 source_repo_hint=source_repo_hint,
                 source_commit=commit,

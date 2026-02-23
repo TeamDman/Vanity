@@ -13,7 +13,7 @@ if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
 $repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 Push-Location $repoRoot
 try {
-    & uv run python .\scripts\vanity_sync.py @ScriptArgs
+    & uv run --with tqdm python .\scripts\vanity_sync.py @ScriptArgs
     exit $LASTEXITCODE
 }
 finally {

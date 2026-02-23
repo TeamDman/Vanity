@@ -34,7 +34,7 @@ jobs:
           VANITY_AUTHOR_NAME: TeamDman
           VANITY_AUTHOR_EMAIL: TeamDman9201@gmail.com
         run: |
-          uv run python scripts/vanity_sync.py \
+          uv run --with tqdm python scripts/vanity_sync.py \
             --source-repo-url "$SOURCE_REPO_URL" \
             --source-web-base-url "$SOURCE_WEB_BASE_URL" \
             --source-author-name "$SOURCE_AUTHOR_NAME" \
