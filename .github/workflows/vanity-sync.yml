@@ -1,0 +1,49 @@
+name: Vanity Commit Sync
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * *"
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout vanity repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Sync empty commits
+        env:
+          SOURCE_REPO_URL: https://github.com/TeamDman/SuperFactoryManager.git
+          SOURCE_AUTHOR_NAME: TeamDman
+          SOURCE_AUTHOR_EMAIL: TeamDman9201@gmail.com
+          VANITY_AUTHOR_NAME: TeamDman
+          VANITY_AUTHOR_EMAIL: TeamDman9201@gmail.com
+        run: |
+          uv run python scripts/vanity_sync.py \
+            --source-repo-url "$SOURCE_REPO_URL" \
+            --source-author-name "$SOURCE_AUTHOR_NAME" \
+            --source-author-email "$SOURCE_AUTHOR_EMAIL" \
+            --vanity-author-name "$VANITY_AUTHOR_NAME" \
+            --vanity-author-email "$VANITY_AUTHOR_EMAIL"
+
+      - name: Push if new commits exist
+        run: |
+          ahead_count=$(git rev-list --count origin/${GITHUB_REF_NAME}..HEAD)
+          echo "Ahead by ${ahead_count} commits"
+          if [ "$ahead_count" -gt 0 ]; then
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+          fi
