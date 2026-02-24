@@ -2,6 +2,16 @@
 
 CLI for creating idempotent empty commits in a target repo based on commits in configured source repos.
 
+## Foreword
+
+This repository exists as an empty mirror of the commits from [TeamDman/SuperFactoryManager](https://github.com/TeamDman/SuperFactoryManager).
+
+[TeamDman/SuperFactoryManager](https://github.com/TeamDman/SuperFactoryManager) is a fork of [gigabit101/SuperFactoryManager](https://github.com/gigabit101/StevesFactoryManager) which is a fork of [Vswe/ModJam3](https://github.com/Vswe/ModJam3).
+
+I think that's beautiful but I also want my activity there to be reflected on my GitHub profile, which being a fork precludes.
+
+Therefore, this repository serves to create empty copies of the commits in [TeamDman/SuperFactoryManager](https://github.com/TeamDman/SuperFactoryManager).
+
 ## Command model
 
 ```text
