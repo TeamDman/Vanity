@@ -17,30 +17,23 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: vanity-sync
 
       - name: Sync empty commits
         env:
           SOURCE_REPO_URL: https://github.com/TeamDman/SuperFactoryManager.git
-          SOURCE_WEB_BASE_URL: https://github.com/TeamDman/SuperFactoryManager
-          SOURCE_AUTHOR_NAME: TeamDman
-          SOURCE_AUTHOR_EMAIL: TeamDman9201@gmail.com
-          VANITY_AUTHOR_NAME: TeamDman
-          VANITY_AUTHOR_EMAIL: TeamDman9201@gmail.com
+          SOURCE_REPO_DIR: ${{ runner.temp }}/source-repo
         run: |
-          uv run --with tqdm python scripts/vanity_sync.py \
-            --source-repo-url "$SOURCE_REPO_URL" \
-            --source-web-base-url "$SOURCE_WEB_BASE_URL" \
-            --source-author-name "$SOURCE_AUTHOR_NAME" \
-            --source-author-email "$SOURCE_AUTHOR_EMAIL" \
-            --vanity-author-name "$VANITY_AUTHOR_NAME" \
-            --vanity-author-email "$VANITY_AUTHOR_EMAIL"
+          git clone --filter=blob:none "$SOURCE_REPO_URL" "$SOURCE_REPO_DIR"
+          cargo run --release -- this-repo set "$GITHUB_WORKSPACE"
+          cargo run --release -- read-repo add "$SOURCE_REPO_DIR"
+          cargo run --release -- sync
 
       - name: Push if new commits exist
         run: |

@@ -1,19 +1,26 @@
 param(
     [Parameter(ValueFromRemainingArguments = $true)]
-    [string[]]$ScriptArgs
+    [string[]]$ScriptArgs,
+
+    [switch]$Release = $true
 )
 
 $ErrorActionPreference = "Stop"
 
-if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
-    Write-Error "uv is required but was not found in PATH. Install uv from https://docs.astral.sh/uv/"
+if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
+    Write-Error "cargo is required but was not found in PATH. Install Rust from https://rustup.rs"
     exit 1
 }
 
 $repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 Push-Location $repoRoot
 try {
-    & uv run --with tqdm python .\scripts\vanity_sync.py @ScriptArgs
+    if ($Release) {
+        & cargo run --release -- @ScriptArgs
+    }
+    else {
+        & cargo run -- @ScriptArgs
+    }
     exit $LASTEXITCODE
 }
 finally {
