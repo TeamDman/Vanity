@@ -27,6 +27,11 @@ All repository paths are canonicalized before storing.
 ## Setup
 
 ```powershell
+# Installation/update
+cargo install --path . --locked
+```
+
+```powershell
 vanity.exe this-repo set "G:\Programming\Repos\Vanity"
 vanity.exe read-repo add "D:\Repos\Minecraft\SFM\repos2\1.19.2"
 ```
