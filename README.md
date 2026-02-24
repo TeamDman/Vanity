@@ -27,27 +27,27 @@ All repository paths are canonicalized before storing.
 ## Setup
 
 ```powershell
-./run.ps1 this-repo set "G:\Programming\Repos\Vanity"
-./run.ps1 read-repo add "D:\Repos\Minecraft\SFM\repos2\1.19.2"
+vanity.exe this-repo set "G:\Programming\Repos\Vanity"
+vanity.exe read-repo add "D:\Repos\Minecraft\SFM\repos2\1.19.2"
 ```
 
 Verify configuration:
 
 ```powershell
-./run.ps1 this-repo show
-./run.ps1 read-repo list
+vanity.exe this-repo show
+vanity.exe read-repo list
 ```
 
 ## Sync
 
 ```powershell
-./run.ps1 sync
+vanity.exe sync
 ```
 
 Dry run:
 
 ```powershell
-./run.ps1 sync --dry-run
+vanity.exe sync --dry-run
 ```
 
 Default helper with baked paths:
