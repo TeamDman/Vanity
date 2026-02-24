@@ -93,11 +93,11 @@ def existing_mirrored_shas(vanity_repo: Path) -> set[str]:
     out = run_git(
         [
             "log",
-            "--all",
             "--extended-regexp",
             "--grep",
             rf"^{re.escape(MARKER_PREFIX)}[0-9a-f]{{40}}$",
             "--format=%B%x00",
+            "HEAD",
         ],
         cwd=vanity_repo,
     )
