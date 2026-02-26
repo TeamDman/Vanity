@@ -342,15 +342,11 @@ fn create_empty_commit(repo: &Repository, message: &str, source: &SourceCommit) 
         .wrap_err("Failed to resolve this-repo HEAD commit")?;
     let tree = head_commit.tree()?;
 
-    let signature_base = repo.signature().wrap_err(
-        "Failed to resolve repo signature. Set user.name and user.email in this-repo git config.",
-    )?;
-    let name = signature_base.name().unwrap_or("Vanity");
-    let email = signature_base.email().unwrap_or("vanity@example.invalid");
+    let (name, email) = resolve_repo_identity(repo);
 
     let signature_time = git2::Time::new(source.author_date_seconds, source.author_offset_minutes);
-    let author = Signature::new(name, email, &signature_time)?;
-    let committer = Signature::new(name, email, &signature_time)?;
+    let author = Signature::new(&name, &email, &signature_time)?;
+    let committer = Signature::new(&name, &email, &signature_time)?;
 
     repo.commit(
         Some("HEAD"),
@@ -361,6 +357,23 @@ fn create_empty_commit(repo: &Repository, message: &str, source: &SourceCommit) 
         &[&head_commit],
     )
     .wrap_err("Failed to create empty vanity commit")
+}
+
+fn resolve_repo_identity(repo: &Repository) -> (String, String) {
+    let Ok(config) = repo.config() else {
+        return ("Vanity".to_owned(), "vanity@example.invalid".to_owned());
+    };
+    let name = config
+        .get_string("user.name")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| "Vanity".to_owned());
+    let email = config
+        .get_string("user.email")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| "vanity@example.invalid".to_owned());
+    (name, email)
 }
 
 fn normalize_remote_url(url: &str) -> String {
@@ -401,4 +414,57 @@ fn progress_bar(total: u64, message: &str) -> ProgressBar {
     }
     pb.set_message(message.to_owned());
     pb
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn create_empty_commit_uses_fallback_identity_when_repo_signature_missing() {
+        let repo_dir = std::env::temp_dir().join(format!(
+            "vanity-test-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("time should be after unix epoch")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&repo_dir).expect("temp repo directory should be created");
+        let repo = Repository::init(&repo_dir).expect("repo should initialize");
+
+        let base_signature = Signature::new(
+            "Initial User",
+            "initial@example.invalid",
+            &git2::Time::new(1_700_000_000, 0),
+        )
+        .expect("base signature should be valid");
+        let tree_id = repo
+            .index()
+            .and_then(|mut index| index.write_tree())
+            .expect("empty tree should be writable");
+        {
+            let tree = repo.find_tree(tree_id).expect("tree should exist");
+            repo.commit(Some("HEAD"), &base_signature, &base_signature, "initial", &tree, &[])
+                .expect("initial commit should be created");
+        }
+
+        let source = SourceCommit {
+            sha: "0123456789abcdef0123456789abcdef01234567".to_owned(),
+            source_repo_hint: "source".to_owned(),
+            source_web_base_url: None,
+            author_date_seconds: 1_700_000_001,
+            author_offset_minutes: 0,
+            subject: "subject".to_owned(),
+        };
+        let oid =
+            create_empty_commit(&repo, "test vanity message", &source).expect("commit should work");
+        {
+            let commit = repo.find_commit(oid).expect("new commit should exist");
+            assert_eq!(commit.author().name(), Some("Vanity"));
+            assert_eq!(commit.author().email(), Some("vanity@example.invalid"));
+        }
+
+        drop(repo);
+        std::fs::remove_dir_all(&repo_dir).expect("temp repo directory should be removed");
+    }
 }
