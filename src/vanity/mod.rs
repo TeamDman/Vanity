@@ -19,6 +19,8 @@ use std::path::PathBuf;
 const MARKER_PREFIX: &str = "Vanity-Source-Commit: ";
 const EXPECTED_VANITY_REMOTE: &str = "https://github.com/TeamDman/Vanity";
 const CONFIG_FILENAME: &str = "vanity-config.txt";
+const FALLBACK_GIT_NAME: &str = "TeamDman";
+const FALLBACK_GIT_EMAIL: &str = "TeamDman@users.noreply.github.com";
 
 #[derive(Clone, Debug, Default)]
 pub struct VanityConfig {
@@ -361,21 +363,18 @@ fn create_empty_commit(repo: &Repository, message: &str, source: &SourceCommit) 
 
 fn resolve_repo_identity(repo: &Repository) -> (String, String) {
     let Ok(config) = repo.config() else {
-        return (
-            "TeamDman".to_owned(),
-            "9356891+TeamDman@users.noreply.github.com".to_owned(),
-        );
+        return (FALLBACK_GIT_NAME.to_owned(), FALLBACK_GIT_EMAIL.to_owned());
     };
     let name = config
         .get_string("user.name")
         .ok()
         .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| "TeamDman".to_owned());
+        .unwrap_or_else(|| FALLBACK_GIT_NAME.to_owned());
     let email = config
         .get_string("user.email")
         .ok()
         .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| "9356891+TeamDman@users.noreply.github.com".to_owned());
+        .unwrap_or_else(|| FALLBACK_GIT_EMAIL.to_owned());
     (name, email)
 }
 
@@ -463,11 +462,8 @@ mod tests {
             create_empty_commit(&repo, "test vanity message", &source).expect("commit should work");
         {
             let commit = repo.find_commit(oid).expect("new commit should exist");
-            assert_eq!(commit.author().name(), Some("TeamDman"));
-            assert_eq!(
-                commit.author().email(),
-                Some("9356891+TeamDman@users.noreply.github.com")
-            );
+            assert_eq!(commit.author().name(), Some(FALLBACK_GIT_NAME));
+            assert_eq!(commit.author().email(), Some(FALLBACK_GIT_EMAIL));
         }
 
         drop(repo);
