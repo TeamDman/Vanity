@@ -361,18 +361,21 @@ fn create_empty_commit(repo: &Repository, message: &str, source: &SourceCommit) 
 
 fn resolve_repo_identity(repo: &Repository) -> (String, String) {
     let Ok(config) = repo.config() else {
-        return ("Vanity".to_owned(), "vanity@example.invalid".to_owned());
+        return (
+            "TeamDman".to_owned(),
+            "9356891+TeamDman@users.noreply.github.com".to_owned(),
+        );
     };
     let name = config
         .get_string("user.name")
         .ok()
         .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| "Vanity".to_owned());
+        .unwrap_or_else(|| "TeamDman".to_owned());
     let email = config
         .get_string("user.email")
         .ok()
         .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| "vanity@example.invalid".to_owned());
+        .unwrap_or_else(|| "9356891+TeamDman@users.noreply.github.com".to_owned());
     (name, email)
 }
 
@@ -460,8 +463,11 @@ mod tests {
             create_empty_commit(&repo, "test vanity message", &source).expect("commit should work");
         {
             let commit = repo.find_commit(oid).expect("new commit should exist");
-            assert_eq!(commit.author().name(), Some("Vanity"));
-            assert_eq!(commit.author().email(), Some("vanity@example.invalid"));
+            assert_eq!(commit.author().name(), Some("TeamDman"));
+            assert_eq!(
+                commit.author().email(),
+                Some("9356891+TeamDman@users.noreply.github.com")
+            );
         }
 
         drop(repo);
